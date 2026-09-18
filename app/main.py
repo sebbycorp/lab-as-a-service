@@ -5,14 +5,14 @@ import os
 import secrets
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
+from fastapi import FastAPI, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import db
-from .provision import allocate_tenant, mint_homepage_token, mint_tailscale_for_lab
+from .provision import approve_lab, destroy_lab, mint_homepage_token, start_lab, stop_lab
 
 APP_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
@@ -188,8 +188,7 @@ def admin_tailscale_acl(request: Request):
 def admin_approve(request: Request, lab_id: int):
     if not request.session.get("admin"):
         return RedirectResponse("/admin/login", status_code=303)
-    alloc = allocate_tenant(lab_id)
-    ts = mint_tailscale_for_lab(alloc["tenant_slug"], alloc["trust_cidr"])
+    result = approve_lab(lab_id)
     now = db.utcnow()
     with db.connect() as conn:
         row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
@@ -211,14 +210,14 @@ def admin_approve(request: Request, lab_id: int):
             WHERE id = ?
             """,
             (
-                alloc["tenant_slug"],
-                alloc["vmid_base"],
-                alloc["trust_cidr"],
-                alloc["client_ip"],
-                alloc["pa_ip"],
-                ts["tailscale_auth_key"],
-                ts["tailscale_notes"],
-                alloc["notes"] + " Bridges: " + ", ".join(alloc["bridges"]),
+                result["tenant_slug"],
+                result["vmid_base"],
+                result["trust_cidr"],
+                result["client_ip"],
+                result["pa_ip"],
+                result["tailscale_auth_key"],
+                result["tailscale_notes"],
+                result["admin_notes"],
                 now,
                 lab_id,
             ),
@@ -232,6 +231,9 @@ def admin_stop(request: Request, lab_id: int):
         return RedirectResponse("/admin/login", status_code=303)
     now = db.utcnow()
     with db.connect() as conn:
+        row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
+        if row:
+            stop_lab(db.row_to_dict(row))
         conn.execute(
             "UPDATE labs SET status = 'stopped', updated_at = ? WHERE id = ? AND status != 'destroyed'",
             (now, lab_id),
@@ -245,6 +247,9 @@ def admin_start(request: Request, lab_id: int):
         return RedirectResponse("/admin/login", status_code=303)
     now = db.utcnow()
     with db.connect() as conn:
+        row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
+        if row:
+            start_lab(db.row_to_dict(row))
         conn.execute(
             "UPDATE labs SET status = 'ready', updated_at = ? WHERE id = ? AND status = 'stopped'",
             (now, lab_id),
@@ -259,6 +264,9 @@ def admin_destroy(request: Request, lab_id: int):
         return RedirectResponse("/admin/login", status_code=303)
     now = db.utcnow()
     with db.connect() as conn:
+        row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
+        if row:
+            destroy_lab(db.row_to_dict(row))
         conn.execute(
             """
             UPDATE labs SET
@@ -271,5 +279,4 @@ def admin_destroy(request: Request, lab_id: int):
             """,
             (now, now, lab_id),
         )
-    # STUB: would pct/qm destroy + revoke Tailscale + FortiGate cleanup
     return RedirectResponse("/admin", status_code=303)

@@ -5,7 +5,7 @@ Target (suggested): privileged or unprivileged Debian/Ubuntu LXC, 1 vCPU / 512â€
 1. Create LXC via PDM (preferred) or `pct create` on iceman.
 2. Install Python 3.11+, copy `/workspace/lab-as-service` to `/opt/lab-as-service`.
 3. `python3 -m venv /opt/lab-as-service/.venv && .venv/bin/pip install -r requirements.txt`
-4. Put secrets in `/opt/lab-as-service/.env` (`ADMIN_PASSWORD`, `SESSION_SECRET`, optional Tailscale).
+4. Put secrets in `/opt/lab-as-service/.env` (`ADMIN_PASSWORD`, `SESSION_SECRET`, optional Tailscale API token, later PDM/PVE tokens from Vault). Never commit `.env`.
 5. systemd unit `lab-portal.service`:
 
 ```

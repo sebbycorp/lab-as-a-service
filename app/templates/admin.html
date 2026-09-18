@@ -8,7 +8,7 @@
 {% endblock %}
 {% block body %}
 <div class="card">
-  <p class="muted">Active labs below. Destroyed count: {{ destroyed_count }}. Provisioning is stubbed (allocate CIDR/VMIDs + notes); PDM clone + FortiGate + Tailscale API come next.</p>
+  <p class="muted">Active labs below. Destroyed count: {{ destroyed_count }}. Approve allocates <code>vmbr-sNNN-*</code> + <code>10.50.N.0/24</code> and mints Tailscale (tags, then untagged). PDM clone runs only when creds are set; otherwise offline-safe. Students cannot destroy.</p>
 </div>
 <div class="card">
   <table>

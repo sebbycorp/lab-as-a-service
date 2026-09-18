@@ -6,7 +6,8 @@
 - systemd: `lab-portal` (onboot)
 - Admin password: on operator machine / Vault only (not in git)
 - Key minting on CT 145: **try tags, then fall back to untagged** if ACL
-  `tagOwners` are missing. This repo now mirrors that logic in `app/tailscale.py`.
+  `tagOwners` are missing. This repo mirrors that in `app/tailscale.py`
+  (student keys get `tag:lab-student` only — never `tag:lab-access`).
 
 ## In-repo (production path, not MVP-only)
 - Student request / status / personal Homepage links (`/h/<token>`) — **no destroy**
@@ -36,7 +37,7 @@
 
 | Layer | Rule |
 |-------|------|
-| L2 | `vmbr-sNNN-{trust,dmz,untrust}` — no student NIC on `vmbr0` |
+| L2 | `vmbr-sNNN-{trust,dmz,unt}` — no student NIC on `vmbr0` (`unt` = untrust, IFNAMSIZ) |
 | L3 | Trust `10.50.N.0/24` inside `10.50.0.0/16` |
 | Tailscale | Students: portal :8080 + 10.50.0.0/16. **Never** 172.16.10.0/24 |
 | Lifecycle | PDM for guests; students cannot destroy |

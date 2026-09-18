@@ -40,18 +40,18 @@ class TagThenUntaggedMintTests(unittest.TestCase):
         self.assertEqual(resp["key"], "tskey-auth-ok")
         self.assertFalse(resp.get("minted_untagged"))
         self.assertIn("tag:lab-student", resp["minted_tags"])
-        self.assertIn("tag:lab-access", resp["minted_tags"])
+        self.assertNotIn("tag:lab-access", resp["minted_tags"])
         self.assertEqual(req.call_count, 1)
         sent_tags = req.call_args.args[2]["capabilities"]["devices"]["create"]["tags"]
         self.assertIn("tag:lab-student", sent_tags)
-        self.assertIn("tag:lab-access", sent_tags)
+        self.assertNotIn("tag:lab-access", sent_tags)
 
     def test_invalid_tags_fall_back_to_untagged(self) -> None:
         """Mirror live CT 145: if ACL has no tagOwners, mint an untagged key."""
         tagged_err = TailscaleError('Tailscale API HTTP 400: {"message":"invalid tags"}')
 
         def _side_effect(_method, _path, body):
-            tags = body["capabilities"]["devices"]["create"].get("tags") or []
+            tags = body["capabilities"]["devices"]["create"].get("tags")
             if tags:
                 raise tagged_err
             return {"key": "tskey-auth-untagged"}
@@ -63,14 +63,14 @@ class TagThenUntaggedMintTests(unittest.TestCase):
         self.assertTrue(resp["minted_untagged"])
         self.assertEqual(resp["minted_tags"], [])
         self.assertGreaterEqual(req.call_count, 2)
-        last_tags = req.call_args.args[2]["capabilities"]["devices"]["create"].get("tags") or []
-        self.assertEqual(last_tags, [])
+        last_create = req.call_args.args[2]["capabilities"]["devices"]["create"]
+        self.assertNotIn("tags", last_create)
 
     def test_unknown_tagowners_error_also_falls_back(self) -> None:
         err = TailscaleError("tag:lab-student is not in tagOwners")
 
         def _side_effect(_method, _path, body):
-            tags = body["capabilities"]["devices"]["create"].get("tags") or []
+            tags = body["capabilities"]["devices"]["create"].get("tags")
             if tags:
                 raise err
             return {"key": "tskey-auth-plain"}
@@ -79,6 +79,18 @@ class TagThenUntaggedMintTests(unittest.TestCase):
             resp = create_student_auth_key(tenant_slug="s002", trust_cidr="10.50.2.0/24")
         self.assertTrue(resp["minted_untagged"])
         self.assertEqual(resp["key"], "tskey-auth-plain")
+
+    def test_server_error_mentioning_tags_does_not_fallback(self) -> None:
+        with patch.object(
+            tailscale,
+            "_request",
+            side_effect=TailscaleError(
+                'Tailscale API HTTP 500: {"tags":["tag:lab-student"]}'
+            ),
+        ):
+            with self.assertRaises(TailscaleError) as ctx:
+                create_student_auth_key(tenant_slug="s004", trust_cidr="10.50.4.0/24")
+        self.assertIn("500", str(ctx.exception))
 
     def test_non_tag_errors_are_not_swallowed(self) -> None:
         with patch.object(

@@ -62,7 +62,7 @@ def prefer_pdm() -> bool:
 
 
 def create_isolated_bridges(plan: dict[str, Any]) -> dict[str, Any]:
-    """TODO: create ``vmbr-sNNN-{trust,dmz,untrust}`` on the target node.
+    """TODO: create ``vmbr-sNNN-{trust,dmz,unt}`` on the target node.
 
     Must not bridge onto ``vmbr0`` / {HOME_LAN_CIDR}.
     PDM/PVE: node network config (``/nodes/{{node}}/network``) then reload.

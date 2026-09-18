@@ -4,7 +4,7 @@ Needs an API access token (tskey-api-...) or OAuth client credentials.
 Device auth keys (tskey-auth-...) cannot mint new keys.
 
 Minting (mirrors live CT 145):
-  1. Try tagged key (tag:lab-student + tag:lab-access, optional tag:student-sNNN)
+  1. Try tagged key (tag:lab-student, optional tag:student-sNNN; never tag:lab-access)
   2. If ACL rejects tags (missing tagOwners), retry without the per-tenant tag
   3. If tags still fail, mint an untagged key so approve still works
 """
@@ -56,15 +56,16 @@ def _env_tag(name: str, default: str) -> str:
 
 
 def student_tags(tenant_slug: str) -> list[str]:
-    """Tags requested for a student device key (before fallback)."""
-    tags = [
-        _env_tag("TAILSCALE_TAG_STUDENT", TAG_STUDENT),
-        _env_tag("TAILSCALE_TAG_ACCESS", TAG_ACCESS),
-    ]
+    """Tags requested for a *student device* key (before untagged fallback).
+
+    Only ``tag:lab-student`` (plus optional ``tag:student-sNNN``).
+    Never attach ``tag:lab-access`` — that tag is an autoApprover for
+    ``10.50.0.0/16`` and belongs on the dual-homed access LXC only.
+    """
+    tags = [_env_tag("TAILSCALE_TAG_STUDENT", TAG_STUDENT)]
     slug = (tenant_slug or "").strip()
     if slug:
         tags.append(f"tag:student-{slug}")
-    # Preserve order, drop blanks/dupes
     seen: set[str] = set()
     out: list[str] = []
     for tag in tags:
@@ -75,6 +76,7 @@ def student_tags(tenant_slug: str) -> list[str]:
 
 
 def _is_tag_error(err: TailscaleError) -> bool:
+    """True only for ACL/tagOwners rejections — not every body that mentions tags."""
     msg = str(err).lower()
     needles = (
         "invalid tags",
@@ -83,7 +85,6 @@ def _is_tag_error(err: TailscaleError) -> bool:
         "tag not found",
         "not in tagowners",
         "tagowners",
-        "tag:",
     )
     return any(n in msg for n in needles)
 
@@ -130,9 +131,7 @@ def _auth_key_payload(
     }
     if tags:
         create["tags"] = list(tags)
-    else:
-        # Untagged fallback — omit tags so Tailscale mints a user-owned key
-        create["tags"] = []
+    # Untagged fallback: omit `tags` entirely (empty list can be "invalid tags")
     return {
         "capabilities": {"devices": {"create": create}},
         "expirySeconds": expiry_seconds,

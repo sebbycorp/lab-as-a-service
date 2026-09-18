@@ -20,9 +20,12 @@ Full ACL text: `docs/ACL-HUJSON.md`. Portal copy: `/admin/tailscale-acl`.
 
 `app/tailscale.py` `create_student_auth_key()`:
 
-1. **Tagged** — `tag:lab-student` + `tag:lab-access` (+ optional `tag:student-sNNN`)
+1. **Tagged** — `tag:lab-student` only (+ optional `tag:student-sNNN`).
+   Never `tag:lab-access` on student keys (that tag auto-approves `10.50.0.0/16` routes and is reserved for the access LXC).
 2. If the API rejects tags (ACL missing `tagOwners`), retry without the per-tenant tag
 3. If tags still fail, mint an **untagged** key so approve still succeeds
+   (untagged keys are user-owned and ignore student grants — Phase 1 must
+   remove any `*:*` ACL so they cannot reach `172.16.10.0/24`)
 
 Untagged keys are a compatibility bridge. After Phase 1 (ACL merge),
 re-approve and confirm `minted_untagged` is false.

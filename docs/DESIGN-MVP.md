@@ -16,7 +16,7 @@ SQLite `labs` table: identity, status machine, tenant allocation, homepage token
 
 | Layer | Mechanism |
 |-------|-----------|
-| L2 | Per-student bridges `vmbr-sNNN-{trust,dmz,untrust}` (no home `vmbr0`) |
+| L2 | Per-student bridges `vmbr-sNNN-{trust,dmz,unt}` (no home `vmbr0`) |
 | L3 | Trust CIDR `10.50.N.0/24` inside `10.50.0.0/16`; FortiGate deny → `172.16.10.0/24` |
 | Identity | Tailscale ACL: `tag:lab-student` → portal :8080 + 10.50.0.0/16 only |
 | Lifecycle | Prefer PDM; secrets in Vault; students cannot destroy |
@@ -26,7 +26,7 @@ SQLite `labs` table: identity, status machine, tenant allocation, homepage token
 | Field | Value |
 |-------|--------|
 | slug | `sNNN` |
-| bridges | `vmbr-sNNN-trust`, `vmbr-sNNN-dmz`, `vmbr-sNNN-untrust` |
+| bridges | `vmbr-sNNN-trust`, `vmbr-sNNN-dmz`, `vmbr-sNNN-unt` (`unt` = untrust; Linux names ≤15 chars) |
 | VMID base | `2000 + N*10` |
 | guests | PA `+0`, Client `+1`, DMZ `+2`, VRouter `+3` |
 | access LXC | `+9`, dual-homed, advertise only `10.50.N.0/24` |

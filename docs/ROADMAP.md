@@ -6,11 +6,13 @@ cannot destroy labs.
 
 ## Phase 1 — ACL
 
+- [ ] **Remove/replace** any legacy `"acls"` allow-all (`*:*`) before merging grants
 - [ ] Merge `docs/ACL-HUJSON.md` into the tailnet Access Controls
 - [ ] Confirm `tagOwners` for `tag:lab-portal`, `tag:lab-student`, `tag:lab-access`
 - [ ] Confirm grants: students → portal **:8080** and **10.50.0.0/16** only
 - [ ] Confirm **no** grant to **172.16.10.0/24**
 - [ ] After tagOwners exist, re-approve a lab and confirm tagged (not untagged) mint
+- [ ] Student keys use `tag:lab-student` only — never `tag:lab-access` (route autoApprover)
 
 ## Phase 2 — Portal on Tailscale
 
@@ -30,7 +32,7 @@ cannot destroy labs.
 ## Phase 4 — Per-student provision
 
 - [ ] Implement PDM linked-clone in `app/proxmox.py` hooks
-- [ ] Create `vmbr-sNNN-{trust,dmz,untrust}` per tenant (no `vmbr0`)
+- [ ] Create `vmbr-sNNN-{trust,dmz,unt}` per tenant (no `vmbr0`; `unt` = untrust)
 - [ ] Clone pack onto those bridges using VMID base `2000 + N*10`
 - [ ] Deploy access LXC advertising **only** `10.50.N.0/24`
 - [ ] Approve stays offline-safe if PDM creds are absent (already true)

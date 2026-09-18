@@ -2,7 +2,7 @@
 
 Encodes the isolation contract used by the portal and (later) PDM:
 
-  - Bridges: ``vmbr-sNNN-{trust,dmz,untrust}`` (never home ``vmbr0``)
+  - Bridges: ``vmbr-sNNN-{trust,dmz,unt}`` (never home ``vmbr0``; ``unt`` = untrust)
   - VMID base: ``2000 + N * 10`` (PA/Client/DMZ/VRouter + access LXC)
   - Trust CIDR: ``10.50.N.0/24`` inside ``10.50.0.0/16``
   - NEVER ``172.16.10.0/24`` (instructor / home lab LAN)
@@ -27,7 +27,8 @@ VMID_BASE_OFFSET = 2000
 VMID_STRIDE = 10
 STUDENT_CAN_DESTROY = False
 
-BRIDGE_SUFFIXES = ("trust", "dmz", "untrust")
+# Linux IFNAMSIZ is 15. `vmbr-sNNN-untrust` is 17 chars — use `unt`.
+BRIDGE_SUFFIXES = ("trust", "dmz", "unt")
 # EDU-210 pack + dual-homed access LXC relative to vmid_base
 ROLE_VMID_OFFSETS = {
     "pa": 0,
@@ -41,7 +42,7 @@ ACCESS_LXC_OFFSET = 9
 def _tenant_n(lab_id: int) -> int:
     n = int(lab_id)
     if n < 1 or n > MAX_TENANT:
-        n = (lab_id % MAX_TENANT) + 1
+        raise ValueError(f"lab_id {lab_id} out of range 1..{MAX_TENANT} (no wrap)")
     return n
 
 
@@ -86,9 +87,9 @@ def mint_tailscale_placeholder(tenant_slug: str) -> dict:
     return {
         "tailscale_auth_key": "",
         "tailscale_notes": (
-            f"Pending: create reusable/ephemeral key tagged "
-            f"tag:lab-access,tag:student-{tenant_slug}; "
-            f"advertise only this tenant trust CIDR."
+            f"Pending: mint one-off key tagged {tailscale.TAG_STUDENT} "
+            f"(never {tailscale.TAG_ACCESS}); advertise only this tenant "
+            f"trust CIDR. Untagged fallback until ACL tagOwners exist."
         ),
     }
 
@@ -187,29 +188,37 @@ def approve_lab(lab_id: int) -> dict[str, Any]:
     }
 
 
-def stop_lab(plan: dict[str, Any] | None = None) -> dict[str, Any]:
+def plan_for_lab(lab_id: int) -> dict[str, Any]:
+    """Rehydrate the deterministic tenant plan from a lab id (for PDM hooks)."""
+    return allocate_tenant(lab_id)
+
+
+def stop_lab(lab_id: int | None = None, plan: dict[str, Any] | None = None) -> dict[str, Any]:
     """Admin stop. Offline: portal status only; PDM stop is a TODO hook."""
-    if plan and proxmox.configured():
-        return proxmox.stop_guests(plan)
+    resolved = plan or (plan_for_lab(lab_id) if lab_id else None)
+    if resolved and proxmox.configured():
+        return proxmox.stop_guests(resolved)
     return {"status": "skipped", "notes": "offline stop (portal status only)"}
 
 
-def start_lab(plan: dict[str, Any] | None = None) -> dict[str, Any]:
+def start_lab(lab_id: int | None = None, plan: dict[str, Any] | None = None) -> dict[str, Any]:
     """Admin start. Offline: portal status only; PDM start is a TODO hook."""
-    if plan and proxmox.configured():
-        return proxmox.start_guests(plan)
+    resolved = plan or (plan_for_lab(lab_id) if lab_id else None)
+    if resolved and proxmox.configured():
+        return proxmox.start_guests(resolved)
     return {"status": "skipped", "notes": "offline start (portal status only)"}
 
 
-def destroy_lab(plan: dict[str, Any] | None = None) -> dict[str, Any]:
+def destroy_lab(lab_id: int | None = None, plan: dict[str, Any] | None = None) -> dict[str, Any]:
     """Admin-only destroy hook. Students have no portal route to this.
 
     Offline: SQLite row is cleared by the caller; PDM destroy is TODO.
     """
     if STUDENT_CAN_DESTROY:
         raise RuntimeError("students must not destroy labs")
-    if plan and proxmox.configured():
-        return proxmox.destroy_guests(plan)
+    resolved = plan or (plan_for_lab(lab_id) if lab_id else None)
+    if resolved and proxmox.configured():
+        return proxmox.destroy_guests(resolved)
     return {
         "status": "skipped",
         "notes": "offline destroy (SQLite only; PDM teardown TODO)",

@@ -66,6 +66,8 @@ class OfflinePortalApproveTests(unittest.TestCase):
         self.assertIn("10.50.1.0/24", status.text)
         self.assertIn("172.16.10.0/24", status.text)  # shown as blocked
         self.assertIn("cannot destroy", status.text.lower())
+        leaked = self.client.get("/lab/1")
+        self.assertEqual(leaked.status_code, 403)
 
     def _homepage_token(self) -> str:
         from app import db

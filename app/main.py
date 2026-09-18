@@ -78,8 +78,9 @@ def lab_status(request: Request, lab_id: int, email: str = ""):
     lab = db.row_to_dict(row)
     if not lab or lab["status"] == "destroyed":
         raise HTTPException(404, "Lab not found")
-    # Light gate: email query must match (MVP; SSO later)
-    if email and email.strip().lower() != lab["student_email"]:
+    # Capability gate until SSO: email query must match. Do not leak
+    # homepage tokens / join keys via /lab/{id} without it.
+    if not email or email.strip().lower() != lab["student_email"]:
         raise HTTPException(403, "Email does not match this lab")
     return templates.TemplateResponse(
         request,
@@ -188,12 +189,13 @@ def admin_tailscale_acl(request: Request):
 def admin_approve(request: Request, lab_id: int):
     if not request.session.get("admin"):
         return RedirectResponse("/admin/login", status_code=303)
-    result = approve_lab(lab_id)
     now = db.utcnow()
     with db.connect() as conn:
         row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
         if not row or row["status"] == "destroyed":
             raise HTTPException(404)
+    result = approve_lab(lab_id)
+    with db.connect() as conn:
         conn.execute(
             """
             UPDATE labs SET
@@ -233,7 +235,7 @@ def admin_stop(request: Request, lab_id: int):
     with db.connect() as conn:
         row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
         if row:
-            stop_lab(db.row_to_dict(row))
+            stop_lab(lab_id)
         conn.execute(
             "UPDATE labs SET status = 'stopped', updated_at = ? WHERE id = ? AND status != 'destroyed'",
             (now, lab_id),
@@ -249,7 +251,7 @@ def admin_start(request: Request, lab_id: int):
     with db.connect() as conn:
         row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
         if row:
-            start_lab(db.row_to_dict(row))
+            start_lab(lab_id)
         conn.execute(
             "UPDATE labs SET status = 'ready', updated_at = ? WHERE id = ? AND status = 'stopped'",
             (now, lab_id),
@@ -266,7 +268,7 @@ def admin_destroy(request: Request, lab_id: int):
     with db.connect() as conn:
         row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
         if row:
-            destroy_lab(db.row_to_dict(row))
+            destroy_lab(lab_id)
         conn.execute(
             """
             UPDATE labs SET

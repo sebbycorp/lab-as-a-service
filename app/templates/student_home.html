@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ lab.student_name }} · lab links{% endblock %}
+{% block heading %}{{ lab.student_name }}'s lab{% endblock %}
+{% block sub %}Personal Homepage · destroy not available{% endblock %}
+{% block body %}
+<p>Status: <span class="badge {{ lab.status }}">{{ lab.status }}</span>
+  · tenant <code>{{ lab.tenant_slug or '—' }}</code></p>
+<div class="grid">
+  <div class="card">
+    <h2>PAN management</h2>
+    <p class="muted">HTTPS to firewall mgmt (via Tailscale)</p>
+    <p class="mono">{{ lab.pa_ip or 'pending' }}</p>
+  </div>
+  <div class="card">
+    <h2>Client desktop</h2>
+    <p class="muted">SSH / RDP target inside your bubble</p>
+    <p class="mono">{{ lab.client_ip or 'pending' }}</p>
+  </div>
+  <div class="card">
+    <h2>Trust network</h2>
+    <p class="muted">Only this CIDR is advertised on Tailscale</p>
+    <p class="mono">{{ lab.trust_cidr or 'pending' }}</p>
+  </div>
+  <div class="card">
+    <h2>Tailscale</h2>
+    <p class="muted">1) Install Tailscale · 2) Join with this key · 3) Open lab IPs below (your bubble only).</p>
+    {% if lab.tailscale_auth_key %}
+    <p class="mono" style="word-break:break-all">{{ lab.tailscale_auth_key }}</p>
+    <p class="muted">Command:</p>
+    <p class="mono" style="word-break:break-all">tailscale up --auth-key={{ lab.tailscale_auth_key }} --accept-routes</p>
+    {% else %}
+    <p class="muted">Key pending — instructor API token not configured yet.</p>
+    {% endif %}
+    <p class="muted" style="margin-top:.75rem">{{ lab.tailscale_notes or '' }}</p>
+  </div>
+</div>
+<p class="muted">No destroy button here — only your instructor can tear this down.</p>
+{% endblock %}

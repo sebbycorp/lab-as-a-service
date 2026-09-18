@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Lab as a Service{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>{% block heading %}Lab as a Service{% endblock %}</h1>
+        <p class="muted">{% block sub %}Isolated student labs · admin-only destroy{% endblock %}</p>
+      </div>
+      <div>{% block nav %}{% endblock %}</div>
+    </header>
+    {% block body %}{% endblock %}
+  </div>
+</body>
+</html>

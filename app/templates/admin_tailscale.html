@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Tailscale ACL{% endblock %}
+{% block heading %}Tailscale ACL{% endblock %}
+{% block sub %}{{ status }}{% endblock %}
+{% block nav %}<a class="btn ghost" href="/admin">Back</a>{% endblock %}
+{% block body %}
+<div class="card">
+  <p class="muted">Merge this into the Tailscale admin ACL. Students use tagged auth keys; they must not reach <code>172.16.10.0/24</code>.</p>
+  <pre class="mono" style="white-space:pre-wrap;background:#0a1020;padding:1rem;border-radius:8px;overflow:auto">{{ fragment }}</pre>
+</div>
+{% endblock %}

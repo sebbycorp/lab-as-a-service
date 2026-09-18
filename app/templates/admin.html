@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Admin · labs{% endblock %}
+{% block heading %}Admin{% endblock %}
+{% block sub %}Create / stop / destroy · students cannot destroy{% endblock %}
+{% block nav %}
+<a class="btn ghost" href="/admin/tailscale-acl">Tailscale ACL</a>
+<form method="post" action="/admin/logout" style="display:inline"><button class="ghost" type="submit">Logout</button></form>
+{% endblock %}
+{% block body %}
+<div class="card">
+  <p class="muted">Active labs below. Destroyed count: {{ destroyed_count }}. Provisioning is stubbed (allocate CIDR/VMIDs + notes); PDM clone + FortiGate + Tailscale API come next.</p>
+</div>
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Student</th><th>Status</th><th>Tenant</th><th>Links</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for lab in labs %}
+      <tr>
+        <td>{{ lab.id }}</td>
+        <td>{{ lab.student_name }}<br><span class="muted">{{ lab.student_email }}</span></td>
+        <td><span class="badge {{ lab.status }}">{{ lab.status }}</span></td>
+        <td class="mono">{{ lab.tenant_slug or '—' }}<br>{{ lab.trust_cidr or '' }}</td>
+        <td>
+          {% if lab.homepage_token %}
+          <a href="/h/{{ lab.homepage_token }}">homepage</a><br>
+          <a href="/lab/{{ lab.id }}?email={{ lab.student_email }}">status</a>
+          {% endif %}
+        </td>
+        <td class="actions">
+          {% if lab.status == 'requested' %}
+          <form method="post" action="/admin/labs/{{ lab.id }}/approve"><button type="submit">Approve / provision</button></form>
+          {% endif %}
+          {% if lab.status == 'ready' %}
+          <form method="post" action="/admin/labs/{{ lab.id }}/stop"><button class="ghost" type="submit">Stop</button></form>
+          {% endif %}
+          {% if lab.status == 'stopped' %}
+          <form method="post" action="/admin/labs/{{ lab.id }}/start"><button class="ghost" type="submit">Start</button></form>
+          {% endif %}
+          {% if lab.status != 'destroyed' %}
+          <form method="post" action="/admin/labs/{{ lab.id }}/destroy"
+                onsubmit="return confirm('Permanently destroy lab {{ lab.id }}? Students cannot undo this.');">
+            <button class="danger" type="submit">Destroy</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No active labs yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

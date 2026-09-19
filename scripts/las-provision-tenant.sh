@@ -18,7 +18,7 @@ VMID_VROUTER=$((2000 + N * 10 + 4))
 CTID_ACCESS=$((3000 + N))
 
 BR_TRUST="vmbr-s$(printf '%03d' "$N")-trust"
-BR_UNTRUST="vmbr-s$(printf '%03d' "$N")-untrust"
+BR_UNTRUST="vmbr-s$(printf '%03d' "$N")-unt"
 BR_DMZ="vmbr-s$(printf '%03d' "$N")-dmz"
 BR_EXTRA4="vmbr-s$(printf '%03d' "$N")-x4"
 BR_EXTRA5="vmbr-s$(printf '%03d' "$N")-x5"
@@ -99,6 +99,7 @@ if ! pct status "$CTID_ACCESS" &>/dev/null; then
     echo "WARN: no debian-12 template; skip access CT"
   else
     pct create "$CTID_ACCESS" "$TPL" \
+      --arch amd64 \
       --hostname "${SLUG}-access" \
       --storage local-lvm --rootfs local-lvm:4 \
       --memory 512 --cores 1 \
@@ -111,10 +112,30 @@ if ! pct status "$CTID_ACCESS" &>/dev/null; then
     grep -q 'dev/net/tun' "$CONF" 2>/dev/null || {
       echo 'lxc.cgroup2.devices.allow: c 10:200 rwm' >>"$CONF"
       echo 'lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file' >>"$CONF"
-      pct reboot "$CTID_ACCESS" || pct stop "$CTID_ACCESS"; pct start "$CTID_ACCESS"
+      pct stop "$CTID_ACCESS" 2>/dev/null || true
+      pct start "$CTID_ACCESS"
     }
   fi
 fi
+
+
+# Optional: join access CT to Tailscale with tag:lab-access
+# Usage: pass auth key as $3 or set LAS_ACCESS_TS_AUTHKEY
+join_access_tailscale() {
+  local key="${3:-${LAS_ACCESS_TS_AUTHKEY:-}}"
+  [[ -z "$key" ]] && return 0
+  pct status "$CTID_ACCESS" &>/dev/null || return 0
+  pct exec "$CTID_ACCESS" -- bash -lc 'command -v tailscale >/dev/null || (export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq curl ca-certificates && curl -fsSL https://tailscale.com/install.sh | sh)'
+  # ensure eth1 up
+  pct exec "$CTID_ACCESS" -- bash -lc 'ip link set eth1 up 2>/dev/null; ip addr add 192.168.1.5/24 dev eth1 2>/dev/null || true; ip -4 addr show eth0 | grep -q inet || dhclient -v eth0 || true'
+  echo "$key" > /tmp/las-ts-${CTID_ACCESS}.key
+  pct push "$CTID_ACCESS" /tmp/las-ts-${CTID_ACCESS}.key /tmp/ts.key
+  pct exec "$CTID_ACCESS" -- bash -lc 'chmod 600 /tmp/ts.key; systemctl enable --now tailscaled; tailscale up --authkey="$(cat /tmp/ts.key)" --hostname='"${SLUG}"'-access --accept-routes=false --advertise-tags=tag:lab-access --ssh; rm -f /tmp/ts.key; sleep 2; tailscale ip -4'
+  rm -f /tmp/las-ts-${CTID_ACCESS}.key
+  echo "access_tailscale=joined"
+}
+
+join_access_tailscale "$@" || echo "WARN: access tailscale join failed"
 
 cat <<OUT
 OK tenant=$SLUG

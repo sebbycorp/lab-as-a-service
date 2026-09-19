@@ -8,13 +8,13 @@
 {% endblock %}
 {% block body %}
 <div class="card">
-  <p class="muted">Active labs below. Destroyed count: {{ destroyed_count }}. Approve allocates <code>vmbr-sNNN-*</code> + <code>10.50.N.0/24</code> and mints Tailscale (<code>tag:lab-student</code>, then untagged). PDM clone runs only when creds are set; otherwise offline-safe. Students cannot destroy.</p>
+  <p class="muted">Active labs below. Destroyed count: {{ destroyed_count }}. Tailscale student keys are <strong>reusable</strong> (rejoin within expiry). Creds also in Vault <code>secret/lab/portal</code>.</p>
 </div>
 <div class="card">
-  <table>
+  <table class="admin-table">
     <thead>
       <tr>
-        <th>ID</th><th>Student</th><th>Status</th><th>Tenant</th><th>Links</th><th>Actions</th>
+        <th>ID</th><th>Student</th><th>Status</th><th>Tenant</th><th>Links</th><th>Tailscale key</th><th>Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -28,6 +28,20 @@
           {% if lab.homepage_token %}
           <a href="/h/{{ lab.homepage_token }}">homepage</a><br>
           <a href="/lab/{{ lab.id }}?email={{ lab.student_email }}">status</a>
+          {% endif %}
+        </td>
+        <td class="ts-key-cell">
+          {% if lab.tailscale_auth_key %}
+          <code class="code-block admin-key">{{ lab.tailscale_auth_key }}</code>
+          {% if lab.tailscale_notes %}<p class="muted tiny">{{ lab.tailscale_notes }}</p>{% endif %}
+          {% else %}
+          <span class="muted">—</span>
+          {% if lab.tailscale_notes %}<p class="muted tiny">{{ lab.tailscale_notes }}</p>{% endif %}
+          {% endif %}
+          {% if lab.status != 'destroyed' and lab.tenant_slug %}
+          <form method="post" action="/admin/labs/{{ lab.id }}/remint-ts" style="margin-top:.45rem">
+            <button class="ghost" type="submit">Remint key</button>
+          </form>
           {% endif %}
         </td>
         <td class="actions">
@@ -49,7 +63,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="muted">No active labs yet.</td></tr>
+      <tr><td colspan="7" class="muted">No active labs yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -18,4 +18,6 @@ Apply via FortiGate API (`secret/lab/fortigate`) or GUI. Automation hook: future
 
 ## Status
 - Portal/access model uses isolated Proxmox bridges (no L2 to home LAN).
-- FortiGate deny is belt-and-suspenders for any accidental route leak.
+- FortiGate policy **deny-lab-students-to-home** (policyid 10): `LAB_STUDENT_NETS` (`10.50.0.0/16`) DENY to `HOME_LAB_LAN` (`172.16.10.0/24`), log enabled.
+- Address objects: `LAB_STUDENT_NETS`, `HOME_LAB_LAN`, `LAB_PORTAL` (172.16.10.150).
+- Smoke access jump `s050-access` on Tailscale `100.106.25.13` with `tag:lab-access` (SSH via Tailscale ACL).

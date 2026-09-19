@@ -2,11 +2,6 @@
 
 Needs an API access token (tskey-api-...) or OAuth client credentials.
 Device auth keys (tskey-auth-...) cannot mint new keys.
-
-Minting (mirrors live CT 145):
-  1. Try tagged key (tag:lab-student, optional tag:student-sNNN; never tag:lab-access)
-  2. If ACL rejects tags (missing tagOwners), retry without the per-tenant tag
-  3. If tags still fail, mint an untagged key so approve still works
 """
 from __future__ import annotations
 
@@ -19,12 +14,6 @@ import urllib.request
 from typing import Any
 
 API = "https://api.tailscale.com/api/v2"
-
-TAG_PORTAL = "tag:lab-portal"
-TAG_STUDENT = "tag:lab-student"
-TAG_ACCESS = "tag:lab-access"
-HOME_LAN_CIDR = "172.16.10.0/24"
-LAB_SUPERNET = "10.50.0.0/16"
 
 
 class TailscaleError(RuntimeError):
@@ -48,45 +37,6 @@ def configured() -> bool:
 def auth_key_only() -> bool:
     tok = _token()
     return bool(tok) and tok.startswith("tskey-auth-")
-
-
-def _env_tag(name: str, default: str) -> str:
-    raw = (os.environ.get(name) or default).strip()
-    return raw or default
-
-
-def student_tags(tenant_slug: str) -> list[str]:
-    """Tags requested for a *student device* key (before untagged fallback).
-
-    Only ``tag:lab-student`` (plus optional ``tag:student-sNNN``).
-    Never attach ``tag:lab-access`` — that tag is an autoApprover for
-    ``10.50.0.0/16`` and belongs on the dual-homed access LXC only.
-    """
-    tags = [_env_tag("TAILSCALE_TAG_STUDENT", TAG_STUDENT)]
-    slug = (tenant_slug or "").strip()
-    if slug:
-        tags.append(f"tag:student-{slug}")
-    seen: set[str] = set()
-    out: list[str] = []
-    for tag in tags:
-        if tag and tag not in seen:
-            seen.add(tag)
-            out.append(tag)
-    return out
-
-
-def _is_tag_error(err: TailscaleError) -> bool:
-    """True only for ACL/tagOwners rejections — not every body that mentions tags."""
-    msg = str(err).lower()
-    needles = (
-        "invalid tags",
-        "invalid tag",
-        "unknown tag",
-        "tag not found",
-        "not in tagowners",
-        "tagowners",
-    )
-    return any(n in msg for n in needles)
 
 
 def _request(method: str, path: str, body: dict | None = None) -> Any:
@@ -114,38 +64,6 @@ def _request(method: str, path: str, body: dict | None = None) -> Any:
         raise TailscaleError(f"Tailscale API HTTP {e.code}: {err[:400]}") from e
 
 
-def _keys_path() -> str:
-    return f"/tailnet/{urllib.parse.quote(_tailnet(), safe='')}/keys"
-
-
-def _auth_key_payload(
-    *,
-    tags: list[str],
-    description: str,
-    expiry_seconds: int,
-) -> dict:
-    create: dict[str, Any] = {
-        "reusable": False,
-        "ephemeral": False,
-        "preauthorized": True,
-    }
-    if tags:
-        create["tags"] = list(tags)
-    # Untagged fallback: omit `tags` entirely (empty list can be "invalid tags")
-    return {
-        "capabilities": {"devices": {"create": create}},
-        "expirySeconds": expiry_seconds,
-        "description": description,
-    }
-
-
-def _annotate(resp: dict, tags: list[str]) -> dict:
-    out = dict(resp)
-    out["minted_tags"] = list(tags)
-    out["minted_untagged"] = not tags
-    return out
-
-
 def create_student_auth_key(
     *,
     tenant_slug: str,
@@ -153,76 +71,88 @@ def create_student_auth_key(
     description: str | None = None,
     expiry_seconds: int = 86400 * 14,
 ) -> dict:
-    """Mint a one-off auth key, trying tags then falling back to untagged.
+    """Mint a reusable auth key for this student lab.
 
-    Live CT 145 behavior: tagged mint is preferred once ACL tagOwners exist.
-    Until then, an untagged key still lets the student join; grants must later
-    restrict them to portal :8080 and 10.50.0.0/16 — never 172.16.10.0/24.
+    Prefers tags tag:lab-student (+ optional tag:student-<slug>).
+    Falls back to an untagged preauthorized key if ACL tagOwners are not set yet.
+    Reusable so students can rejoin from multiple devices / reinstalls within expiry.
     """
     if not configured():
         raise TailscaleError(
             "Need TAILSCALE_API_KEY starting with tskey-api- (not tskey-auth-)"
         )
 
-    desc = description or f"lab {tenant_slug} trust {trust_cidr}"
-    requested = student_tags(tenant_slug)
-    without_per_tenant = [t for t in requested if not t.startswith("tag:student-")]
-    attempts: list[list[str]] = []
-    for candidate in (requested, without_per_tenant, []):
-        if candidate not in attempts:
-            attempts.append(candidate)
+    base_caps = {
+        "reusable": True,
+        "ephemeral": False,
+        "preauthorized": True,
+    }
+    # Tailscale API 400s if description contains '/'; sanitize CIDR (192.168.1.0/24 → 192.168.1.0-24).
+    desc = description or "lab-{}-trust-{}".format(tenant_slug, trust_cidr.replace("/", "-"))
+    path = f"/tailnet/{urllib.parse.quote(_tailnet(), safe='')}/keys"
 
-    last_err: TailscaleError | None = None
-    for tags in attempts:
-        payload = _auth_key_payload(
-            tags=tags, description=desc, expiry_seconds=expiry_seconds
-        )
+    # Never put tag:lab-access on student keys (that tag auto-approves 10.50 routes for jump hosts).
+    # Prefer simple lab-student tag. Per-tenant tags often 400 if not in ACL tagOwners.
+    tag_sets = [
+        ["tag:lab-student"],
+        [],  # untagged fallback until ACL tagOwners exist
+    ]
+    last_err: Exception | None = None
+    for tags in tag_sets:
+        create = dict(base_caps)
+        if tags:
+            create["tags"] = tags
+        payload = {
+            "capabilities": {"devices": {"create": create}},
+            "expirySeconds": expiry_seconds,
+            "description": desc,
+        }
         try:
-            return _annotate(_request("POST", _keys_path(), payload), tags)
+            return _request("POST", path, payload)
         except TailscaleError as e:
-            if _is_tag_error(e):
-                last_err = e
-                continue
-            raise
-    if last_err is not None:
-        raise last_err
-    raise TailscaleError("Unable to mint Tailscale auth key")
+            last_err = e
+            continue
+    raise TailscaleError(f"Could not mint auth key: {last_err}")
 
 
 def acl_policy_fragment() -> str:
-    """HuJSON fragment for Sebastian to merge into Tailscale ACL.
-
-    tagOwners: tag:lab-portal / tag:lab-student / tag:lab-access
-    grants: students → portal :8080 and 10.50.0.0/16 only.
-    NEVER grant 172.16.10.0/24 (instructor / home lab LAN).
-    """
-    return f"""\
-// Lab-as-a-service — merge into Tailscale Access Controls (HuJSON)
-// Full copy-paste policy: docs/ACL-HUJSON.md
-{{
-  "tagOwners": {{
-    "{TAG_PORTAL}": ["autogroup:admin"],
-    "{TAG_STUDENT}": ["autogroup:admin"],
-    "{TAG_ACCESS}": ["autogroup:admin"]
-  }},
-  "autoApprovers": {{
-    "routes": {{
-      "{LAB_SUPERNET}": ["{TAG_ACCESS}"]
-    }}
-  }},
+    """HuJSON fragment for Sebastian to merge into Tailscale ACL."""
+    return """\
+// Lab-as-a-service — merge into Access Controls
+{
+  "tagOwners": {
+    "tag:lab-portal": ["autogroup:admin"],
+    "tag:lab-access": ["autogroup:admin"],
+    "tag:lab-student": ["autogroup:admin"],
+    // optional per-tenant tags created as tag:student-s001 etc.
+  },
+  "autoApprovers": {
+    // subnet routers for student trust CIDRs (10.50.N.0/24)
+    "routes": {
+      "10.50.0.0/16": ["tag:lab-access"]
+    }
+  },
   "grants": [
-    {{
-      "src": ["{TAG_STUDENT}"],
-      "dst": ["{TAG_PORTAL}"],
+    // Students can reach the portal
+    {
+      "src": ["tag:lab-student"],
+      "dst": ["tag:lab-portal"],
       "ip": ["8080"]
-    }},
-    {{
-      "src": ["{TAG_STUDENT}"],
-      "dst": ["{LAB_SUPERNET}"],
+    },
+    // Students: SSH jump + browser desktop (noVNC)
+    {
+      "src": ["tag:lab-student"],
+      "dst": ["tag:lab-access"],
+      "ip": ["6080", "8443"]
+    },
+    // Students can reach advertised lab routes (further narrowed per-device later)
+    {
+      "src": ["tag:lab-student"],
+      "dst": ["10.50.0.0/16"],
       "ip": ["*"]
-    }}
-  ]
-}}
-// NEVER grant {HOME_LAN_CIDR} to {TAG_STUDENT} (instructor LAN).
-// Grants are default-deny: omitting {HOME_LAN_CIDR} is the deny.
+    }
+  ],
+  // Harden: students must NOT reach home LAN
+  // Prefer grants-only ACLs; if using ACLs legacy, deny 172.16.10.0/24 for tag:lab-student
+}
 """

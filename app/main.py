@@ -5,14 +5,15 @@ import os
 import secrets
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import db
-from .provision import approve_lab, destroy_lab, mint_homepage_token, start_lab, stop_lab
+from .provision import allocate_tenant, mint_homepage_token, mint_tailscale_for_lab
+from . import proxmox_provision
 
 APP_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
@@ -23,6 +24,7 @@ PORTAL_PUBLIC_URL = os.environ.get("PORTAL_PUBLIC_URL", "http://127.0.0.1:8080")
 
 # Hard rule: never expose home LAN in student UI
 HOME_LAN = "172.16.10.0/24"
+TAILNET_DNS = os.environ.get("LAS_TAILNET_DNS", "tail4736a7.ts.net").lstrip(".")
 
 app = FastAPI(title="Lab as a Service", docs_url=None, redoc_url=None)
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax", https_only=False)
@@ -105,10 +107,31 @@ def student_homepage(request: Request, token: str):
     lab = db.row_to_dict(row)
     if not lab:
         raise HTTPException(404, "Unknown or destroyed lab")
+    slug = (lab.get("tenant_slug") or "").strip()
+    access_short = f"{slug}-access" if slug else ""
+    access_host = f"{access_short}.{TAILNET_DNS}" if access_short else ""
+    pa_ip = lab.get("pa_ip") or "192.168.1.254"
+    client_ip = lab.get("client_ip") or "192.168.1.20"
+    novnc_url = (
+        f"http://{access_short}:6080/vnc.html?autoconnect=1&resize=remote"
+        if access_short
+        else ""
+    )
+    firewall_url = f"https://{access_short}:8443" if access_short else ""
     return templates.TemplateResponse(
         request,
         "student_home.html",
-        {"request": request, "lab": lab, "portal_url": PORTAL_PUBLIC_URL},
+        {
+            "request": request,
+            "lab": lab,
+            "portal_url": PORTAL_PUBLIC_URL,
+            "access_short": access_short,
+            "access_host": access_host,
+            "pa_ip": pa_ip,
+            "client_ip": client_ip,
+            "novnc_url": novnc_url,
+            "firewall_url": firewall_url,
+        },
     )
 
 
@@ -189,13 +212,29 @@ def admin_tailscale_acl(request: Request):
 def admin_approve(request: Request, lab_id: int):
     if not request.session.get("admin"):
         return RedirectResponse("/admin/login", status_code=303)
+    alloc = allocate_tenant(lab_id)
+    ts = mint_tailscale_for_lab(alloc["tenant_slug"], alloc["trust_cidr"])
+    prov_notes = ""
+    try:
+        prov = proxmox_provision.provision_tenant(lab_id, alloc["tenant_slug"])
+        if not prov.get("skipped"):
+            # Prefer real academy IPs when provisioned
+            if prov.get("pa_ip"):
+                alloc["pa_ip"] = prov["pa_ip"]
+            if prov.get("client_ip"):
+                alloc["client_ip"] = prov["client_ip"]
+            if prov.get("trust_lab"):
+                alloc["trust_cidr"] = prov["trust_lab"]
+            prov_notes = " Provisioned: " + ", ".join(f"{k}={prov[k]}" for k in ("vmid_pa","vmid_client","ctid_access","bridge_trust") if k in prov)
+        else:
+            prov_notes = " Provision skipped (LAS_PROVISION off)."
+    except Exception as e:
+        prov_notes = f" Provision error: {e}"
     now = db.utcnow()
     with db.connect() as conn:
         row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
         if not row or row["status"] == "destroyed":
             raise HTTPException(404)
-    result = approve_lab(lab_id)
-    with db.connect() as conn:
         conn.execute(
             """
             UPDATE labs SET
@@ -212,17 +251,43 @@ def admin_approve(request: Request, lab_id: int):
             WHERE id = ?
             """,
             (
-                result["tenant_slug"],
-                result["vmid_base"],
-                result["trust_cidr"],
-                result["client_ip"],
-                result["pa_ip"],
-                result["tailscale_auth_key"],
-                result["tailscale_notes"],
-                result["admin_notes"],
+                alloc["tenant_slug"],
+                alloc["vmid_base"],
+                alloc["trust_cidr"],
+                alloc["client_ip"],
+                alloc["pa_ip"],
+                ts["tailscale_auth_key"],
+                ts["tailscale_notes"],
+                alloc["notes"] + " Bridges: " + ", ".join(alloc["bridges"]) + prov_notes,
                 now,
                 lab_id,
             ),
+        )
+    return RedirectResponse("/admin", status_code=303)
+
+
+
+@app.post("/admin/labs/{lab_id}/remint-ts")
+def admin_remint_ts(request: Request, lab_id: int):
+    if not request.session.get("admin"):
+        return RedirectResponse("/admin/login", status_code=303)
+    now = db.utcnow()
+    with db.connect() as conn:
+        row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
+        if not row or row["status"] == "destroyed":
+            raise HTTPException(404)
+        slug = row["tenant_slug"] or f"lab{lab_id}"
+        cidr = row["trust_cidr"] or "192.168.1.0/24"
+        ts = mint_tailscale_for_lab(slug, cidr)
+        conn.execute(
+            """
+            UPDATE labs SET
+              tailscale_auth_key = ?,
+              tailscale_notes = ?,
+              updated_at = ?
+            WHERE id = ?
+            """,
+            (ts["tailscale_auth_key"], ts["tailscale_notes"], now, lab_id),
         )
     return RedirectResponse("/admin", status_code=303)
 
@@ -233,9 +298,6 @@ def admin_stop(request: Request, lab_id: int):
         return RedirectResponse("/admin/login", status_code=303)
     now = db.utcnow()
     with db.connect() as conn:
-        row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
-        if row:
-            stop_lab(lab_id)
         conn.execute(
             "UPDATE labs SET status = 'stopped', updated_at = ? WHERE id = ? AND status != 'destroyed'",
             (now, lab_id),
@@ -249,9 +311,6 @@ def admin_start(request: Request, lab_id: int):
         return RedirectResponse("/admin/login", status_code=303)
     now = db.utcnow()
     with db.connect() as conn:
-        row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
-        if row:
-            start_lab(lab_id)
         conn.execute(
             "UPDATE labs SET status = 'ready', updated_at = ? WHERE id = ? AND status = 'stopped'",
             (now, lab_id),
@@ -266,9 +325,6 @@ def admin_destroy(request: Request, lab_id: int):
         return RedirectResponse("/admin/login", status_code=303)
     now = db.utcnow()
     with db.connect() as conn:
-        row = conn.execute("SELECT * FROM labs WHERE id = ?", (lab_id,)).fetchone()
-        if row:
-            destroy_lab(lab_id)
         conn.execute(
             """
             UPDATE labs SET
@@ -281,4 +337,8 @@ def admin_destroy(request: Request, lab_id: int):
             """,
             (now, now, lab_id),
         )
+    try:
+        proxmox_provision.destroy_tenant(lab_id)
+    except Exception:
+        pass
     return RedirectResponse("/admin", status_code=303)

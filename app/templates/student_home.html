@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}{{ lab.student_name }} · lab{% endblock %}
+{% block heading %}{{ lab.student_name }}'s lab{% endblock %}
+{% block sub %}{% endblock %}
+{% block body %}
+<div class="hero hero-tight">
+  <span class="badge {{ lab.status }}">{{ lab.status }}</span>
+  {% if lab.tenant_slug %}<span class="muted"><code>{{ lab.tenant_slug }}</code></span>{% endif %}
+</div>
+
+{% if access_host %}
+<section class="page-grid page-grid-top">
+  <div class="card topo-card topo-compact">
+    <header class="card-head">
+      <div>
+        <div class="section-kicker">Reference</div>
+        <h2>Network map</h2>
+      </div>
+    </header>
+    <p class="muted topo-blurb">Your isolated pod. Instructor LAN is not visible.</p>
+    <div class="topo-wrap" role="img" aria-label="EDU-210 network diagram">
+      <img class="topo-img" src="/static/img/edu210-network-map.png" alt="EDU-210 lab network map: Client, Firewall, Router, DMZ, External" />
+    </div>
+  </div>
+
+  <aside class="card devices-side">
+    <header class="card-head">
+      <div>
+        <div class="section-kicker">Access</div>
+        <h2>Open devices</h2>
+      </div>
+    </header>
+    <p class="muted">After Tailscale is connected.</p>
+    <div class="connect-stack">
+      {% if novnc_url %}
+      <a class="btn btn-lg" href="{{ novnc_url }}" target="_blank" rel="noopener">Client desktop</a>
+      {% endif %}
+      {% if firewall_url %}
+      <a class="btn btn-lg ghost" href="{{ firewall_url }}" target="_blank" rel="noopener">Firewall UI</a>
+      {% endif %}
+    </div>
+
+    <div class="inset-grid">
+      <div class="inset">
+        <div class="inset-label">Firewall login</div>
+        <p class="inset-line"><span class="muted">User</span> <code>admin</code></p>
+        <p class="inset-line"><span class="muted">Pass</span> <code>W3lcome098!</code></p>
+        <p class="muted inset-note">Accept the cert warning once.</p>
+      </div>
+      <div class="inset">
+        <div class="inset-label">SSH to Firewall</div>
+        <p class="muted">On the Client desktop:</p>
+        <code class="code-block">ssh admin@{{ pa_ip }}</code>
+        <p class="muted inset-note">Password <code>W3lcome098!</code></p>
+      </div>
+    </div>
+  </aside>
+</section>
+
+<section class="page-grid page-grid-bottom">
+  <aside class="card connect-side">
+    <header class="card-head">
+      <div>
+        <div class="section-kicker">First time</div>
+        <h2>How to connect</h2>
+      </div>
+    </header>
+    <p class="muted">Join Tailscale, then use Open devices above.</p>
+
+    <div class="os-tabs" role="tablist">
+      <button type="button" class="os-tab active" data-os="windows">Windows</button>
+      <button type="button" class="os-tab" data-os="mac">macOS</button>
+      <button type="button" class="os-tab" data-os="linux">Linux</button>
+    </div>
+
+    <div class="os-panel active" data-os="windows">
+      <ol class="howto-steps">
+        <li>Install <a href="https://tailscale.com/download/windows" target="_blank" rel="noopener">Tailscale for Windows</a></li>
+        <li>In PowerShell:</li>
+      </ol>
+      {% if lab.tailscale_auth_key %}
+      <code class="code-block">tailscale up --auth-key={{ lab.tailscale_auth_key }} --accept-routes</code>
+      {% else %}
+      <p class="muted">Auth key pending.</p>
+      {% endif %}
+      <ol class="howto-steps" start="3">
+        <li>Open <strong>Client desktop</strong> or <strong>Firewall UI</strong> above.</li>
+      </ol>
+    </div>
+
+    <div class="os-panel" data-os="mac">
+      <ol class="howto-steps">
+        <li>Install <a href="https://tailscale.com/download/mac" target="_blank" rel="noopener">Tailscale for macOS</a></li>
+        <li>In Terminal:</li>
+      </ol>
+      {% if lab.tailscale_auth_key %}
+      <code class="code-block">sudo tailscale up --auth-key={{ lab.tailscale_auth_key }} --accept-routes</code>
+      {% else %}
+      <p class="muted">Auth key pending.</p>
+      {% endif %}
+      <ol class="howto-steps" start="3">
+        <li>Open <strong>Client desktop</strong> or <strong>Firewall UI</strong> above.</li>
+      </ol>
+    </div>
+
+    <div class="os-panel" data-os="linux">
+      <ol class="howto-steps">
+        <li>Install <a href="https://tailscale.com/download/linux" target="_blank" rel="noopener">Tailscale for Linux</a></li>
+        <li>Run:</li>
+      </ol>
+      {% if lab.tailscale_auth_key %}
+      <code class="code-block">sudo tailscale up --auth-key={{ lab.tailscale_auth_key }} --accept-routes</code>
+      {% else %}
+      <p class="muted">Auth key pending.</p>
+      {% endif %}
+      <ol class="howto-steps" start="3">
+        <li>Open <strong>Client desktop</strong> or <strong>Firewall UI</strong> above.</li>
+      </ol>
+    </div>
+  </aside>
+
+  <div class="card creds-side">
+    <header class="card-head">
+      <div>
+        <div class="section-kicker">Lab hosts</div>
+        <h2>Credentials</h2>
+      </div>
+    </header>
+    <table class="cred-table">
+      <thead>
+        <tr><th>Device</th><th>IP</th><th>User</th><th>Password</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Client</td><td class="mono">{{ client_ip }}</td><td class="mono">lab-user</td><td class="mono">Pal0Alt0!</td></tr>
+        <tr><td>Firewall</td><td class="mono">{{ pa_ip }}</td><td class="mono">admin</td><td class="mono">W3lcome098!</td></tr>
+        <tr><td>DMZ</td><td class="mono">192.168.50.10</td><td class="mono">root</td><td class="mono">Pal0Alt0!</td></tr>
+        <tr><td>VRouter</td><td class="mono">192.168.1.10</td><td class="mono">root</td><td class="mono">Pal0Alt0!</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<div class="card">
+  <p class="muted">Lab not ready yet — check back after your instructor approves.</p>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  var tabs = document.querySelectorAll(".os-tab");
+  var panels = document.querySelectorAll(".os-panel");
+  if (!tabs.length) return;
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      var os = tab.getAttribute("data-os");
+      tabs.forEach(function (t) { t.classList.toggle("active", t === tab); });
+      panels.forEach(function (p) {
+        p.classList.toggle("active", p.getAttribute("data-os") === os);
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

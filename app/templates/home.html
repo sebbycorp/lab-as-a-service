@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block heading %}Request a lab{% endblock %}
+{% block sub %}EDU-210 style pod · private to you · no access to instructor LAN{% endblock %}
+{% block nav %}<a class="btn ghost" href="/admin">Admin</a>{% endblock %}
+{% block body %}
+<div class="card">
+  <p class="muted">After approval you’ll get a personal links page (Homepage-style) and Tailscale access to <em>your</em> lab only. Destroy is admin-only.</p>
+  <form method="post" action="/request">
+    <label for="student_name">Full name</label>
+    <input id="student_name" name="student_name" required placeholder="Jane Student" />
+    <label for="student_email">School email</label>
+    <input id="student_email" name="student_email" type="email" required placeholder="jane@school.edu" />
+    <button type="submit">Request lab</button>
+  </form>
+</div>
+{% endblock %}

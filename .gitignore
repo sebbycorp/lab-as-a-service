@@ -1,0 +1,23 @@
+# Secrets and local runtime (never commit)
+.env
+.env.*
+!.env.example
+
+# SQLite / portal state
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

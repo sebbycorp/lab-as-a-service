@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Lab as a Service{% endblock %}</title>
+  <script>
+  (function () {
+    try {
+      var t = localStorage.getItem("las-theme");
+      if (t !== "light" && t !== "dark") {
+        t = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      }
+      document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+  </script>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>{% block heading %}Lab as a Service{% endblock %}</h1>
+        <p class="muted">{% block sub %}Isolated student labs · admin-only destroy{% endblock %}</p>
+      </div>
+      <div class="header-actions">
+        <div class="theme-toggle" role="group" aria-label="Color theme">
+          <button type="button" class="theme-btn" data-theme-set="light" aria-pressed="false">Light</button>
+          <button type="button" class="theme-btn" data-theme-set="dark" aria-pressed="false">Dark</button>
+        </div>
+        {% block nav %}{% endblock %}
+      </div>
+    </header>
+    {% block body %}{% endblock %}
+  </div>
+  <script>
+  (function () {
+    function apply(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      try { localStorage.setItem("las-theme", theme); } catch (e) {}
+      document.querySelectorAll("[data-theme-set]").forEach(function (btn) {
+        var on = btn.getAttribute("data-theme-set") === theme;
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
+        btn.classList.toggle("active", on);
+      });
+    }
+    var cur = document.documentElement.getAttribute("data-theme") || "dark";
+    apply(cur);
+    document.querySelectorAll("[data-theme-set]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        apply(btn.getAttribute("data-theme-set"));
+      });
+    });
+  })();
+  </script>
+</body>
+</html>

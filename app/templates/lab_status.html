@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Lab {{ lab.id }} · status{% endblock %}
+{% block heading %}Lab #{{ lab.id }}{% endblock %}
+{% block sub %}{{ lab.student_name }} · {{ lab.student_email }}{% endblock %}
+{% block nav %}<a class="btn ghost" href="/">Home</a>{% endblock %}
+{% block body %}
+<div class="card">
+  <p>Status: <span class="badge {{ lab.status }}">{{ lab.status }}</span></p>
+  {% if lab.status == 'requested' %}
+  <p class="muted">Waiting for instructor approval. Bookmark this page.</p>
+  {% elif lab.status in ['ready','stopped'] %}
+  <p>Your personal homepage:</p>
+  <p><a class="btn" href="/h/{{ lab.homepage_token }}">Open my lab links</a></p>
+  <p class="muted">Tenant <code>{{ lab.tenant_slug }}</code> · trust <code>{{ lab.trust_cidr }}</code></p>
+  <p class="muted">Client {{ lab.client_ip }} · PA mgmt {{ lab.pa_ip }}</p>
+  {% endif %}
+  <p class="muted" style="margin-top:1rem">Isolation: your lab cannot reach instructor LAN <code>{{ home_lan_blocked }}</code>. You also cannot destroy this environment.</p>
+</div>
+{% endblock %}

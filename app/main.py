@@ -80,8 +80,9 @@ def lab_status(request: Request, lab_id: int, email: str = ""):
     lab = db.row_to_dict(row)
     if not lab or lab["status"] == "destroyed":
         raise HTTPException(404, "Lab not found")
-    # Light gate: email query must match (MVP; SSO later)
-    if email and email.strip().lower() != lab["student_email"]:
+    # Capability gate until SSO: email query must match. Do not leak
+    # homepage tokens / join keys via /lab/{id} without it.
+    if not email or email.strip().lower() != lab["student_email"]:
         raise HTTPException(403, "Email does not match this lab")
     return templates.TemplateResponse(
         request,
